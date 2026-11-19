@@ -334,12 +334,13 @@ def test_texts_keep_cmd_special_characters_out_of_powershell_arguments():
     assert cli.build_parser().parse_args(["kadr", "Cabc123XYZ_", "--hook-id", "h01"]).hook_id == "h01"
 
 
-def test_trial_cmd_runs_python_and_leaves_in_the_same_line():
-    """D7: cmd.exe czyta plik wsadowy linia po linii, od zapamiętanego miejsca. Aktualizacja, która podmieni trial.cmd
-    w trakcie działania, nie może dać mu do wykonania reszty nowego pliku, więc wyjście stoi w linii z Pythonem."""
+def test_trial_cmd_passes_the_exit_code_on_the_next_line():
+    """`python ... & exit /b` bez kodu oddaje na Windowsie 0 (sprawdzone w CI), więc kod wyjścia idzie przez
+    `exit /b %errorlevel%` w osobnej linii: rozwija się dopiero po powrocie z Pythona."""
     lines = (ROOT / "trial.cmd").read_bytes().decode("ascii").splitlines()
-    assert [line for line in lines if "-m trial_reels" in line] == ['".venv\\Scripts\\python.exe" -m trial_reels %* & exit /b']
-    assert not any("ERRORLEVEL" in line for line in lines)        # %ERRORLEVEL% w tej linii rozwinąłby się za wcześnie
+    i = next(n for n, line in enumerate(lines) if "-m trial_reels" in line)
+    assert lines[i] == '".venv\\Scripts\\python.exe" -m trial_reels %*'
+    assert lines[i + 1] == "exit /b %errorlevel%"
 
 
 def test_pitfalls_say_how_to_recover_from_an_update_cut_off_midway():

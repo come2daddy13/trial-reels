@@ -183,7 +183,7 @@ def test_every_push_checks_the_whole_history_with_the_guard():
 
 
 def test_windows_checks_that_trial_cmd_passes_on_the_exit_code_of_the_program():
-    """D7: Python i `exit /b` stoją w jednej linii trial.cmd; na Windowsie sprawdzamy, że kod wyjścia programu przechodzi."""
+    """Na Windowsie sprawdzamy, że kod wyjścia programu przechodzi przez trial.cmd."""
     windows = jobs(read("testy.yml"))["windows"]
     step = windows.split("- name: trial.cmd przekazuje kod wyjścia programu", 1)[1].split("\n      - name:", 1)[0]
     assert ".\\trial.cmd nieistniejaca-komenda" in step and "$LASTEXITCODE -ne 2" in step and "exit 0" in step
