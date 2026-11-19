@@ -1,0 +1,110 @@
+name: Testy
+
+# Testy idą na każdy push do gałęzi, na każdy pull request i na ręczne uruchomienie (Actions, Run workflow). Push tagu v*
+# obsługuje wydanie.yml, które woła te same testy przez workflow_call, więc tagów tu nie liczę (żeby nie płacić minut
+# dwa razy).
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Środowisko Pythona 3.12
+        run: uv venv --python 3.12 .venv
+
+      - name: Pakiety
+        run: uv pip install --python .venv -r requirements.txt -r requirements-dev.txt
+
+      - name: Strażnik (pliki)
+        run: .venv\Scripts\python tools\straznik.py
+
+      # Testy bez PYTHONUTF8: brakujące encoding= wychodzi tu jako błąd, bo Windows czyta wtedy pliki w cp1252.
+      - name: Python bez trybu UTF-8
+        run: .venv\Scripts\python -c "import sys; sys.exit(sys.flags.utf8_mode)"
+
+      - name: Testy
+        run: .venv\Scripts\python -m pytest -q
+
+      - name: trial.cmd wersja (PowerShell)
+        run: .\trial.cmd wersja
+
+      # Python i exit /b stoją w trial.cmd w jednej linii (podmiana pliku w trakcie działania nie wykona reszty), więc
+      # sprawdzamy, że kod wyjścia programu przechodzi przez cmd.exe: zła komenda to kod 2. Na końcu exit 0, bo inaczej
+      # krok skończyłby się kodem ostatniego programu.
+      - name: trial.cmd przekazuje kod wyjścia programu (PowerShell)
+        run: |
+          .\trial.cmd nieistniejaca-komenda
+          if ($LASTEXITCODE -ne 2) { Write-Error "trial.cmd oddał kod $LASTEXITCODE zamiast 2"; exit 1 }
+          exit 0
+
+      - name: trial.sh wersja (Git Bash)
+        shell: bash
+        run: bash trial.sh wersja
+
+  # Na prywatnym repo minuty macOS liczą się razy 10, więc przy pushu i pull requeście ten job rusza dopiero po
+  # upublicznieniu repo. Ręczne uruchomienie (workflow_dispatch) liczy macOS zawsze: przed pierwszym wydaniem z
+  # prywatnego repo uruchom ten workflow ręcznie, bo wydanie z tagu przechodzi wtedy tylko przez Windows.
+  macos:
+    if: github.event.repository.private == false || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Środowisko Pythona 3.12
+        run: uv venv --python 3.12 .venv
+
+      - name: Pakiety
+        run: uv pip install --python .venv -r requirements.txt -r requirements-dev.txt
+
+      - name: Strażnik (pliki)
+        run: .venv/bin/python tools/straznik.py
+
+      - name: Testy
+        run: .venv/bin/python -m pytest -q
+
+      - name: trial.sh wersja
+        run: bash trial.sh wersja
+
+  # Przy każdym pushu strażnik sprawdza całą historię: autorów i committerów (tylko tożsamość Trial Reels) oraz strefę
+  # dat commitów (tylko +0000). Wystarczy python3 z obrazu runnera, bo strażnik używa tylko biblioteki standardowej.
+  historia:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Strażnik (pliki i cała historia)
+        run: python3 tools/straznik.py --historia

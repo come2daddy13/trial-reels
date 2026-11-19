@@ -1,0 +1,7 @@
+faster-whisper==1.2.1
+pillow==13.0.0
+imageio-ffmpeg==0.8.1
+tzdata==2026.6
+filelock==4.2.12
+# av: render importuje go wprost. 14.2.0 ma koła dla Pythona 3.12 na macOS 12+ (arm64 i Intel) i na Windows x64.
+av==14.2.0

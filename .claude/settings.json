@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bash trial.sh *)",
+      "PowerShell(.\\trial.cmd *)"
+    ],
+    "ask": [
+      "Bash(bash trial.sh aktualizuj --tak *)",
+      "PowerShell(.\\trial.cmd aktualizuj --tak *)"
+    ],
+    "deny": [
+      "Read(/dane/.env*)",
+      "Edit(/dane/.env*)"
+    ]
+  }
+}

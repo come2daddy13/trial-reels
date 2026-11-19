@@ -1,0 +1,8 @@
+*.sh text eol=lf
+*.cmd text eol=crlf
+*.png binary
+*.ttf binary
+tests/ export-ignore
+tools/ export-ignore
+.github/ export-ignore
+requirements-dev.txt export-ignore

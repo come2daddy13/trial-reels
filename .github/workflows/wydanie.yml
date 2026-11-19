@@ -1,0 +1,94 @@
+name: Wydanie
+
+# Push tagu vX.Y.Z: testy, potem paczka i na końcu wydanie na GitHubie.
+# - Paczka (job tylko do odczytu): tag musi być równy „v” + VERSION, a jego commit musi być na gałęzi main; pełny skan
+#   historii, zip z kodem dla klientów i notatki. Gotowe pliki przechodzą do następnego joba jako artefakt.
+# - Wydanie (jedyny job z prawem zapisu): używa wyłącznie akcji GitHuba (actions/*) i nie uruchamia kodu z repo.
+#   Wydanie tworzy github-actions[bot] wbudowanym GITHUB_TOKEN. Innych sekretów nie ma, a workflow niczego nie commituje.
+# Każda akcja jest przypięta pełnym skrótem commita (wersja w komentarzu), bo tag w cudzym repo da się przestawić.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  testy:
+    uses: ./.github/workflows/testy.yml
+
+  paczka:
+    needs: testy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Checkout z fetch-depth 0 pobiera wszystkie gałęzie (refs/remotes/origin/*) i tagi, więc main jest na miejscu.
+      - name: Tag to „v” + VERSION, a jego commit jest na main
+        run: |
+          expected="v$(tr -d '[:space:]' < VERSION)"
+          if ! printf '%s' "$GITHUB_REF_NAME" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Tag musi mieć postać vX.Y.Z (jest: $GITHUB_REF_NAME)." >&2
+            exit 1
+          fi
+          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
+            echo "Tag $GITHUB_REF_NAME nie zgadza się z plikiem VERSION ($expected)." >&2
+            exit 1
+          fi
+          commit="$(git rev-parse --verify "$GITHUB_REF^{commit}")"
+          if ! git merge-base --is-ancestor "$commit" refs/remotes/origin/main; then
+            echo "Commit tagu $GITHUB_REF_NAME nie jest na gałęzi main, więc go nie wydaję." >&2
+            exit 1
+          fi
+
+      # Narzędzia wydania potrzebują tylko biblioteki standardowej, więc wystarcza python3 z obrazu runnera.
+      - name: Strażnik (pliki i cała historia)
+        run: python3 tools/straznik.py --historia
+
+      - name: Zip z kodem (adres repozytorium w programie to to repozytorium)
+        run: python3 tools/wydanie.py dist/trial-reels.zip --repo "$GITHUB_REPOSITORY"
+
+      # Notatki to sekcje ZMIANY.md od poprzedniego tagu do tego wydania: klient, który pominął wydanie, przy aktualizacji
+      # widzi zmiany także jego (aktualizuj pokazuje notatki tylko najnowszego wydania).
+      - name: Notatki z ZMIANY.md
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          python3 tools/notatki.py "$version" --tagi "$(git tag --list 'v[0-9]*')" > dist/notatki.md
+          cat dist/notatki.md
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wydanie
+          path: |
+            dist/trial-reels.zip
+            dist/notatki.md
+          if-no-files-found: error
+          retention-days: 1
+
+  wydanie:
+    needs: paczka
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wydanie
+          path: dist
+
+      - name: Wydanie na GitHubie
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/trial-reels.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file dist/notatki.md
